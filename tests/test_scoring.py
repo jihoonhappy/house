@@ -181,3 +181,25 @@ class TestCommute:
         criteria = {**CRITERIA, "max_commute_min": 45}
         assert analyze.score_candidate(
             {"commute_min": 45}, {"commute": 100}, criteria, SETTINGS, 2026) == 0.0
+
+
+class TestValuePerEok:
+    def test_cheaper_at_same_score_gives_better_value(self):
+        cheap = analyze.value_per_eok({"score": 60.0, "price_manwon": 40000})
+        pricey = analyze.value_per_eok({"score": 60.0, "price_manwon": 60000})
+        assert cheap > pricey
+
+    def test_higher_score_at_same_price_gives_better_value(self):
+        assert (analyze.value_per_eok({"score": 70.0, "price_manwon": 50000})
+                > analyze.value_per_eok({"score": 50.0, "price_manwon": 50000}))
+
+    def test_is_score_per_hundred_million_won(self):
+        assert analyze.value_per_eok({"score": 60.0, "price_manwon": 60000}) == 10.0
+        assert analyze.value_per_eok({"score": 55.0, "price_manwon": 40000}) == 13.8
+
+    def test_missing_price_is_none(self):
+        assert analyze.value_per_eok({"score": 60.0, "price_manwon": 0}) is None
+        assert analyze.value_per_eok({"score": 60.0}) is None
+
+    def test_missing_score_is_none(self):
+        assert analyze.value_per_eok({"price_manwon": 50000}) is None

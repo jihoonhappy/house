@@ -29,8 +29,8 @@ api_limits:
   kakao_daily_call_budget: 25000
 
 criteria:
-  # 가격 범위 (만원 단위). 6억~7억 — "면적대별 대표가격" 기준으로 적용된다.
-  price_min: 60000
+  # 가격 범위 (만원 단위). "면적대별 대표가격" 기준으로 적용된다.
+  price_min: 30000
   price_max: 70000
 
   # 실거래가 수집 기간 (최근 N개월)

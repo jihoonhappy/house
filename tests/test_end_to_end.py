@@ -1,4 +1,6 @@
 """거래 원본 → 점수화된 후보까지의 통합 흐름 (네트워크 없음)."""
+import pytest
+
 from aptfinder import analyze
 
 BANDS = [{"label": "59㎡형", "min": 55, "max": 66}, {"label": "84㎡형", "min": 80, "max": 96}]
@@ -43,10 +45,13 @@ def run(trades):
                  "market_nearest": "수서시장", "market_nearest_m": 900,
                  "academy_count": 30, "commute_min": 28.4, "commute_to": "강남"}
                 for c in passed]
-    return sorted(
-        ({**c, "score": analyze.score_candidate(c, WEIGHTS, CRITERIA, SETTINGS, 2026)}
-         for c in enriched),
-        key=lambda c: -c["score"])
+    scored = []
+    for candidate in enriched:
+        with_score = {**candidate,
+                      "score": analyze.score_candidate(
+                          candidate, WEIGHTS, CRITERIA, SETTINGS, 2026)}
+        scored.append({**with_score, "value_per_eok": analyze.value_per_eok(with_score)})
+    return sorted(scored, key=lambda c: -c["score"])
 
 
 class TestPipeline:
@@ -65,6 +70,11 @@ class TestPipeline:
 
     def test_score_is_within_bounds(self):
         assert 0 <= run(trades_for("까치마을", 65000))[0]["score"] <= 100
+
+    def test_value_per_eok_is_attached(self):
+        candidate = run(trades_for("까치마을", 65000))[0]
+        assert candidate["value_per_eok"] == pytest.approx(
+            round(candidate["score"] / 6.5, 1))
 
     def test_csv_columns_all_exist_on_candidate(self):
         from aptfinder.pipeline import CSV_COLUMNS

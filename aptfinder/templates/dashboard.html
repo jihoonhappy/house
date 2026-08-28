@@ -26,6 +26,7 @@
   tbody tr:hover { background: #eff6ff; cursor: pointer; }
   tbody tr.active { background: #dbeafe; }
   .price { font-weight: 600; color: #b45309; }
+  .value { font-weight: 600; color: #047857; }
   .score { font-weight: 700; color: #1d4ed8; }
   .band, .type { background: #f3f4f6; border-radius: 3px; padding: 1px 5px; font-size: 11px; }
   .type.mixed { background: #fee2e2; color: #b91c1c; }
@@ -40,7 +41,9 @@
 <header>
   <h1>__TITLE__</h1>
   <p>대표가는 단지×면적대별 실거래 중앙값입니다. "서울까지"는 최근접역 기준 지하철 <b>추정</b> 소요시간으로,
-     급행·배차간격이 반영되지 않아 실제와 ±10분가량 차이날 수 있습니다. 실제 매물·호가·현장 확인은 별도로 하세요.</p>
+     급행·배차간격이 반영되지 않아 실제와 ±10분가량 차이날 수 있습니다.
+     "가성비"는 억당 점수(점수÷가격)로, 클수록 값에 비해 조건이 좋다는 뜻입니다.
+     실제 매물·호가·현장 확인은 별도로 하세요.</p>
 </header>
 <div id="wrap">
   <div id="map"></div>
@@ -49,6 +52,8 @@
       <label>지역 <select id="sidoFilter"><option value="">전체</option></select></label>
       <label>구 <select id="guFilter"><option value="">전체</option></select></label>
       <label>면적대 <select id="bandFilter"><option value="">전체</option></select></label>
+      <label>가격 <input type="number" id="minPrice" value="0" style="width:44px" step="1">~<input
+             type="number" id="maxPrice" value="0" style="width:44px" step="1">억</label>
       <label>최대 통근 <input type="number" id="maxCommute" value="0" style="width:52px" step="5">분</label>
       <label>최소 세대수 <input type="number" id="minHh" value="0" style="width:64px" step="100"></label>
       <label>최소 점수 <input type="number" id="minScore" value="0" style="width:52px"></label>
@@ -56,8 +61,10 @@
     </div>
     <table id="tbl">
       <thead><tr>
-        <th data-k="score">점수</th><th data-k="apt">단지</th><th data-k="gu">구/동</th>
+        <th data-k="score">점수</th><th data-k="value_per_eok">가성비</th>
+        <th data-k="apt">단지</th><th data-k="gu">구/동</th>
         <th data-k="area_band">면적대</th><th data-k="price_manwon">대표가</th>
+        <th data-k="commute_min">서울까지</th>
         <th data-k="households">세대수</th><th data-k="build_year">준공</th>
         <th data-k="station_dist_m">역</th>
         <th data-k="school_dist_m">초등</th>
@@ -94,7 +101,7 @@ const markers = DATA.map((c, i) => {
   mk.bindPopup(`<b>${esc(c.apt)}</b> <span class="band">${esc(c.area_band)}</span><br>
     ${esc(c.sido || '')} ${esc(c.gu)} ${esc(c.dong)} · ${esc(c.complex_type || '분류미상')} ${n(c.households)}세대
     ${c.dong_count ? '· ' + c.dong_count + '개동' : ''}<br>
-    대표가 ${eok(c.price_manwon)} · 점수 ${c.score}<br>
+    대표가 ${eok(c.price_manwon)} · 점수 ${c.score} · 가성비 ${c.value_per_eok ?? '-'}<br>
     ${esc(c.station)} ${c.station_dist_m}m${c.commute_min != null ?
       ' → ' + esc(c.commute_to) + ' 약 ' + Math.round(c.commute_min) + '분' : ''}<br>
     ${esc(c.school || '-')} ${c.school_dist_m ?? '-'}m<br>
@@ -125,11 +132,13 @@ function render() {
   const gu = guFilter.value, band = bandFilter.value, sido = sidoFilter.value;
   const minS = +minScore.value || 0, minH = +minHh.value || 0;
   const maxC = +maxCommute.value || 0;
+  const loP = (+minPrice.value || 0) * 10000, hiP = (+maxPrice.value || 0) * 10000;
   visible = DATA.map((c, i) => ({ c, i }))
     .filter(({ c }) => (!sido || c.sido === sido) && (!gu || c.gu === gu)
       && (!band || c.area_band === band)
       && c.score >= minS && (c.households ?? 0) >= minH
-      && (!maxC || (c.commute_min != null && c.commute_min <= maxC)))
+      && (!maxC || (c.commute_min != null && c.commute_min <= maxC))
+      && (!loP || c.price_manwon >= loP) && (!hiP || c.price_manwon <= hiP))
     .sort((a, b) => {
       const x = a.c[sortKey] ?? -Infinity, y = b.c[sortKey] ?? -Infinity;
       const r = x < y ? -1 : x > y ? 1 : 0;
@@ -140,6 +149,7 @@ function render() {
     const mixed = (c.complex_type || '').includes('주상복합');
     return `<tr data-i="${i}">
       <td class="score">${c.score}</td>
+      <td class="value">${c.value_per_eok ?? '-'}</td>
       <td>${esc(c.apt)}${mixed ? ' <span class="type mixed">주상복합</span>' : ''}</td>
       <td>${esc(c.sido || '')} ${esc(c.gu)} ${esc(c.dong)}</td>
       <td><span class="band">${esc(c.area_band)}</span></td>
@@ -188,6 +198,7 @@ document.querySelectorAll('#tbl th[data-k]').forEach(th => th.onclick = () => {
 });
 sidoFilter.onchange = guFilter.onchange = bandFilter.onchange = render;
 minScore.oninput = minHh.oninput = maxCommute.oninput = render;
+minPrice.oninput = maxPrice.oninput = render;
 render();
 if (DATA.length) map.fitBounds(L.latLngBounds(DATA.map(c => [c.lat, c.lon])).pad(0.1));
 </script>

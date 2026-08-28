@@ -259,6 +259,19 @@ def score_candidate(
     return round(total, 1)
 
 
+def value_per_eok(candidate: Mapping[str, Any]) -> float | None:
+    """가성비 = 억당 점수. 같은 점수면 쌀수록, 같은 값이면 점수가 높을수록 크다.
+
+    점수 자체에는 가격을 넣지 않는다. 입지·단지 품질(점수)과 가격 부담을
+    분리해서 봐야 어느 쪽을 얼마나 양보하는지가 드러나기 때문이다.
+    """
+    price = candidate.get("price_manwon") or 0
+    score = candidate.get("score")
+    if not price or score is None:
+        return None
+    return round(score / (price / 10000), 1)
+
+
 def _build_year_score(build_year: Any, current_year: int) -> float:
     """준공년도 점수 0~1. 모르면 평균 연식으로 가정한다."""
     try:

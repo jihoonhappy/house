@@ -26,7 +26,8 @@ from .transit import TransitGraph
 log = get_logger("pipeline")
 
 CSV_COLUMNS = [
-    "score", "gu", "dong", "apt", "area_band", "price_manwon", "price_basis",
+    "score", "value_per_eok", "gu", "dong", "apt", "area_band",
+    "price_manwon", "price_basis",
     "commute_min", "commute_to",
     "households", "dong_count", "complex_type", "parking", "trade_count",
     "latest_deal_ym", "latest_price_manwon", "build_year",
@@ -145,19 +146,10 @@ def run_analyze(cfg: Mapping[str, Any]) -> list[dict[str, Any]]:
     geocoder.save()
     log.info("좌표 확보: %d/%d곳", len(located), len(sized))
 
-    detailed = [matching.attach_complex_info(c, complexes) for c in located]
-    detailed, classified = _classify_nationwide(cfg, detailed, classified)
-    kept = [c for c in detailed if matching.passes_complex_filter(c, criteria, classified)]
-    excluded_types = criteria.get("exclude_complex_types") or []
-    dropped_type = sum(1 for c in detailed
-                       if any(t in (c["complex_type"] or "") for t in excluded_types))
-    unknown = sum(1 for c in detailed if not c["complex_type"])
-    log.info("단지분류 확인 %d곳 · %s %d곳 제외 · 미확인 %d곳 → %d곳 (분류자료 보유 지역: %s)",
-             len(detailed) - unknown, "/".join(excluded_types), dropped_type, unknown,
-             len(kept), "·".join(sorted(classified)) or "없음")
-
+    # 거리·통근 조건을 먼저 걸러 유료 조회 대상을 줄인다.
+    # (단지분류는 공공데이터포털 일일 호출 한도가 있어 살아남은 후보만 조회한다)
     with_distance = [analyze.attach_distances(c, station_list, school_list, settings)
-                     for c in kept]
+                     for c in located]
     near_station = [c for c in with_distance if analyze.passes_distance(c, criteria)]
     log.info("역세권 %dm 조건 통과: %d곳", criteria["station_max_distance_m"], len(near_station))
     if not near_station:
@@ -172,7 +164,20 @@ def run_analyze(cfg: Mapping[str, Any]) -> list[dict[str, Any]]:
              f"{limit}분 이내" if limit else "제한없음", len(reachable))
     if not reachable:
         return _save([], cfg)
-    near_station = reachable
+
+    detailed = [matching.attach_complex_info(c, complexes) for c in reachable]
+    detailed, classified = _classify_nationwide(cfg, detailed, classified)
+    kept = [c for c in detailed if matching.passes_complex_filter(c, criteria, classified)]
+    excluded_types = criteria.get("exclude_complex_types") or []
+    dropped_type = sum(1 for c in detailed
+                       if any(t in (c["complex_type"] or "") for t in excluded_types))
+    unknown = sum(1 for c in detailed if not c["complex_type"])
+    log.info("단지분류 확인 %d곳 · %s %d곳 제외 · 미확인 %d곳 → %d곳 (분류자료 보유 지역: %s)",
+             len(detailed) - unknown, "/".join(excluded_types), dropped_type, unknown,
+             len(kept), "·".join(sorted(classified)) or "없음")
+    if not kept:
+        return _save([], cfg)
+    near_station = kept
 
     finder = make_amenity_finder(cfg)
     specs = cfg.get("amenities") or {}
@@ -185,8 +190,12 @@ def run_analyze(cfg: Mapping[str, Any]) -> list[dict[str, Any]]:
     finder.save()
     log.info("편의시설 조사 완료 (카카오 호출 %d건)", finder.calls)
 
-    scored = [{**c, "score": analyze.score_candidate(c, cfg["scoring"], criteria, settings)}
-              for c in surveyed]
+    scored = []
+    for candidate in surveyed:
+        with_score = {**candidate,
+                      "score": analyze.score_candidate(
+                          candidate, cfg["scoring"], criteria, settings)}
+        scored.append({**with_score, "value_per_eok": analyze.value_per_eok(with_score)})
     scored.sort(key=lambda c: -c["score"])
     return _save(scored, cfg)
 

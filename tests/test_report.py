@@ -94,3 +94,40 @@ class TestPublishCopy:
         local = report.write([CANDIDATE], CRITERIA, tmp_path / "dashboard.html")
         published = report.write([CANDIDATE], CRITERIA, tmp_path / "docs" / "index.html")
         assert local.read_text(encoding="utf-8") == published.read_text(encoding="utf-8")
+
+
+class TestValueColumn:
+    def test_renders_value_column(self):
+        html = report.render([{**CANDIDATE, "value_per_eok": 11.0}], CRITERIA)
+        assert "가성비" in html and "value_per_eok" in html
+
+    def test_price_filter_inputs_exist(self):
+        html = report.render([CANDIDATE], CRITERIA)
+        assert 'id="minPrice"' in html and 'id="maxPrice"' in html
+
+
+class TestTableIntegrity:
+    """헤더와 셀 개수가 어긋나면 표 전체가 한 칸씩 밀린다. 실제로 그런 버그가 있었다."""
+
+    def _counts(self, html):
+        import re
+        # <thead>가 <th...>로 잘못 잡히지 않도록 닫는 태그까지 요구한다
+        headers = re.findall(r"<th\b[^>]*>.*?</th>", html, re.S)
+        row = re.search(r"return `<tr data-i=.*?</tr>`;", html, re.S)
+        cells = re.findall(r"<td\b[^>]*>.*?</td>", row.group(0), re.S) if row else []
+        return len(headers), len(cells)
+
+    def test_header_and_cell_counts_match(self):
+        headers, cells = self._counts(report.render([CANDIDATE], CRITERIA))
+        assert headers == cells, f"헤더 {headers}개 vs 셀 {cells}개 — 표가 어긋난다"
+
+    def test_every_sortable_header_maps_to_a_candidate_field(self):
+        import re
+        html = report.render([CANDIDATE], CRITERIA)
+        keys = re.findall(r'<th data-k="([^"]+)"', html)
+        allowed = set(CANDIDATE) | {"value_per_eok", "commute_min", "sido",
+                                    "middle_school_count", "high_school_count"}
+        assert [k for k in keys if k not in allowed] == []
+
+    def test_commute_column_is_present(self):
+        assert "서울까지" in report.render([CANDIDATE], CRITERIA)
