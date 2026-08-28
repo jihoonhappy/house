@@ -131,3 +131,33 @@ class TestTableIntegrity:
 
     def test_commute_column_is_present(self):
         assert "서울까지" in report.render([CANDIDATE], CRITERIA)
+
+
+GROUPS = {
+    "transit": {"label": "교통", "items": ["commute", "station_distance"]},
+    "life": {"label": "생활인프라", "items": ["hospital", "mart", "market"]},
+}
+MAXIMA = {"transit": 30, "life": 20}
+
+
+class TestGroupColumns:
+    def test_group_metadata_is_injected(self):
+        html = report.render([CANDIDATE], CRITERIA, GROUPS, MAXIMA)
+        assert "__GROUPS__" not in html
+        assert '"label": "생활인프라"' in html or '"label":"생활인프라"' in html
+        assert '"max": 20' in html or '"max":20' in html
+
+    def test_renders_without_groups(self):
+        html = report.render([CANDIDATE], CRITERIA)
+        assert "__GROUPS__" not in html
+        assert "const GROUPS = [];" in html
+
+    def test_group_columns_come_from_one_array(self):
+        """헤더와 셀을 같은 GROUPS 배열로 만들어야 열이 어긋나지 않는다."""
+        html = report.render([CANDIDATE], CRITERIA, GROUPS, MAXIMA)
+        assert "GROUPS].reverse().forEach" in html      # 헤더 생성
+        assert "GROUPS.map(g => `<td class=\"grp\">" in html   # 셀 생성
+
+    def test_write_passes_groups_through(self, tmp_path):
+        out = report.write([CANDIDATE], CRITERIA, tmp_path / "d.html", GROUPS, MAXIMA)
+        assert "생활인프라" in out.read_text(encoding="utf-8")

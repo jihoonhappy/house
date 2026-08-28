@@ -26,7 +26,8 @@ from .transit import TransitGraph
 log = get_logger("pipeline")
 
 CSV_COLUMNS = [
-    "score", "value_per_eok", "gu", "dong", "apt", "area_band",
+    "score", "score_transit", "score_school", "score_complex", "score_life",
+    "value_per_eok", "gu", "dong", "apt", "area_band",
     "price_manwon", "price_basis",
     "commute_min", "commute_to",
     "households", "dong_count", "complex_type", "parking", "trade_count",
@@ -190,12 +191,19 @@ def run_analyze(cfg: Mapping[str, Any]) -> list[dict[str, Any]]:
     finder.save()
     log.info("편의시설 조사 완료 (카카오 호출 %d건)", finder.calls)
 
+    groups = cfg.get("score_groups") or {}
     scored = []
     for candidate in surveyed:
         with_score = {**candidate,
                       "score": analyze.score_candidate(
                           candidate, cfg["scoring"], criteria, settings)}
-        scored.append({**with_score, "value_per_eok": analyze.value_per_eok(with_score)})
+        by_group = analyze.group_scores(
+            candidate, cfg["scoring"], criteria, settings, groups)
+        scored.append({
+            **with_score,
+            "value_per_eok": analyze.value_per_eok(with_score),
+            **{f"score_{name}": value for name, value in by_group.items()},
+        })
     scored.sort(key=lambda c: -c["score"])
     return _save(scored, cfg)
 
@@ -251,12 +259,15 @@ def run_dashboard(cfg: Mapping[str, Any]) -> Path:
     candidates = _load("candidates.json")
     if not candidates:
         log.warning("후보가 0곳입니다. config.yaml의 조건을 완화한 뒤 02_analyze.py를 다시 실행하세요.")
-    out = report.write(candidates, cfg["criteria"])
+    groups = cfg.get("score_groups") or {}
+    maxima = analyze.group_maxima(cfg["scoring"], groups)
+    out = report.write(candidates, cfg["criteria"], groups=groups, maxima=maxima)
     log.info("대시보드 생성 완료 (%d곳) → %s", len(candidates), out)
 
     publish_to = (cfg.get("publish_to") or "").strip()
     if publish_to:
         published = report.write(candidates, cfg["criteria"],
-                                 Path(config_module.PROJECT_ROOT) / publish_to)
+                                 Path(config_module.PROJECT_ROOT) / publish_to,
+                                 groups=groups, maxima=maxima)
         log.info("공개용 사본 → %s", published)
     return out

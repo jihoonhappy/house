@@ -6,6 +6,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from datetime import date
 from typing import Any
 
+from .errors import ConfigError
 from .geo import count_within, nearest
 
 MAX_BUILDING_AGE = 40      # 이보다 오래되면 준공년도 점수 0
@@ -257,6 +258,56 @@ def score_candidate(
     total = sum(weight * components[name]
                 for name, weight in weights.items() if name in components)
     return round(total, 1)
+
+
+def group_maxima(
+    weights: Mapping[str, float], groups: Mapping[str, Mapping[str, Any]]
+) -> dict[str, float]:
+    """그룹별 만점. 각 그룹에 속한 항목 배점의 합."""
+    return {name: sum(weights.get(item, 0) for item in spec.get("items", []))
+            for name, spec in groups.items()}
+
+
+def group_scores(
+    candidate: Mapping[str, Any],
+    weights: Mapping[str, float],
+    criteria: Mapping[str, Any],
+    settings: Mapping[str, Any] | None,
+    groups: Mapping[str, Mapping[str, Any]],
+    current_year: int | None = None,
+) -> dict[str, float]:
+    """교통·학군·단지·생활인프라처럼 묶어서 본 점수.
+
+    총점을 쪼갠 것이므로 모든 그룹 점수의 합은 총점과 같다.
+    """
+    components = score_components(candidate, criteria, settings, current_year)
+    return {
+        name: round(sum(weights.get(item, 0) * components[item]
+                        for item in spec.get("items", []) if item in components), 1)
+        for name, spec in groups.items()
+    }
+
+
+def validate_groups(
+    weights: Mapping[str, float], groups: Mapping[str, Mapping[str, Any]]
+) -> None:
+    """모든 배점 항목이 정확히 한 그룹에만 들어가는지 확인한다.
+
+    빠지거나 겹치면 그룹 점수의 합이 총점과 달라져 표가 거짓말을 하게 된다.
+    """
+    seen: list[str] = []
+    for name, spec in groups.items():
+        for item in spec.get("items", []):
+            if item not in weights:
+                raise ConfigError(
+                    f"score_groups['{name}']에 배점표에 없는 항목이 있습니다: {item}")
+            seen.append(item)
+    duplicated = sorted({item for item in seen if seen.count(item) > 1})
+    if duplicated:
+        raise ConfigError(f"여러 그룹에 중복된 항목이 있습니다: {', '.join(duplicated)}")
+    missing = sorted(set(weights) - set(seen))
+    if missing:
+        raise ConfigError(f"어느 그룹에도 속하지 않은 배점 항목이 있습니다: {', '.join(missing)}")
 
 
 def value_per_eok(candidate: Mapping[str, Any]) -> float | None:

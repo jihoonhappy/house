@@ -93,6 +93,13 @@ def validate(cfg: dict[str, Any]) -> dict[str, Any]:
 
     if not isinstance(cfg.get("scoring"), dict):
         raise ConfigError("config.yaml에 scoring 블록이 없습니다.")
+    groups = cfg.get("score_groups")
+    if groups:
+        from .analyze import validate_groups  # 순환 임포트를 피하기 위해 지역 임포트
+        if not isinstance(groups, dict):
+            raise ConfigError("score_groups는 매핑이어야 합니다.")
+        validate_groups(cfg["scoring"], groups)
+
     districts = all_districts(cfg)
     if not districts:
         raise ConfigError(

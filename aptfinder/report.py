@@ -38,14 +38,21 @@ def regions_of(candidates: Sequence[Mapping[str, Any]]) -> list[str]:
 
 
 def render(
-    candidates: Sequence[Mapping[str, Any]], criteria: Mapping[str, Any]
+    candidates: Sequence[Mapping[str, Any]],
+    criteria: Mapping[str, Any],
+    groups: Mapping[str, Mapping[str, Any]] | None = None,
+    maxima: Mapping[str, float] | None = None,
 ) -> str:
     """HTML 문자열을 만든다. </script> 조기 종료를 막기 위해 '<'를 이스케이프."""
     if not TEMPLATE_PATH.exists():
         raise MissingDataError(f"대시보드 템플릿이 없습니다: {TEMPLATE_PATH}")
     payload = json.dumps(candidates, ensure_ascii=False).replace("<", "\\u003c")
+    group_meta = [{"key": name, "label": spec.get("label", name),
+                   "max": (maxima or {}).get(name, 0)}
+                  for name, spec in (groups or {}).items()]
     return (TEMPLATE_PATH.read_text(encoding="utf-8")
             .replace("__TITLE__", build_title(criteria, regions_of(candidates)))
+            .replace("__GROUPS__", json.dumps(group_meta, ensure_ascii=False))
             .replace("__DATA__", payload))
 
 
@@ -53,9 +60,11 @@ def write(
     candidates: Sequence[Mapping[str, Any]],
     criteria: Mapping[str, Any],
     out_path: str | Path | None = None,
+    groups: Mapping[str, Mapping[str, Any]] | None = None,
+    maxima: Mapping[str, float] | None = None,
 ) -> Path:
     """대시보드 파일을 쓰고 경로를 반환한다."""
     out_path = Path(out_path) if out_path else PROJECT_ROOT / "dashboard.html"
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(render(candidates, criteria), encoding="utf-8")
+    out_path.write_text(render(candidates, criteria, groups, maxima), encoding="utf-8")
     return out_path

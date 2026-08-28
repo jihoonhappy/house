@@ -27,6 +27,8 @@
   tbody tr.active { background: #dbeafe; }
   .price { font-weight: 600; color: #b45309; }
   .value { font-weight: 600; color: #047857; }
+  .grp { color: #1f2937; background: #f9fafb; }
+  th.grp-h { background: #eef2ff; }
   .score { font-weight: 700; color: #1d4ed8; }
   .band, .type { background: #f3f4f6; border-radius: 3px; padding: 1px 5px; font-size: 11px; }
   .type.mixed { background: #fee2e2; color: #b91c1c; }
@@ -43,6 +45,7 @@
   <p>대표가는 단지×면적대별 실거래 중앙값입니다. "서울까지"는 최근접역 기준 지하철 <b>추정</b> 소요시간으로,
      급행·배차간격이 반영되지 않아 실제와 ±10분가량 차이날 수 있습니다.
      "가성비"는 억당 점수(점수÷가격)로, 클수록 값에 비해 조건이 좋다는 뜻입니다.
+     교통·학군·단지·생활인프라는 총점을 성격별로 쪼갠 것이라 넷을 더하면 점수가 됩니다.
      실제 매물·호가·현장 확인은 별도로 하세요.</p>
 </header>
 <div id="wrap">
@@ -81,6 +84,12 @@
 </div>
 <script>
 const DATA = __DATA__;
+// 점수 그룹. 헤더와 셀을 같은 배열에서 만들어 열이 어긋날 수 없게 한다.
+const GROUPS = __GROUPS__;
+[...GROUPS].reverse().forEach(g => document
+  .querySelector('#tbl th[data-k="value_per_eok"]')
+  .insertAdjacentHTML('afterend',
+    `<th class="grp-h" data-k="score_${g.key}">${g.label}<span class="sub">/${g.max}</span></th>`));
 const map = L.map('map').setView([37.55, 126.99], 11);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
   { attribution: '&copy; OpenStreetMap', maxZoom: 19 }).addTo(map);
@@ -102,6 +111,7 @@ const markers = DATA.map((c, i) => {
     ${esc(c.sido || '')} ${esc(c.gu)} ${esc(c.dong)} · ${esc(c.complex_type || '분류미상')} ${n(c.households)}세대
     ${c.dong_count ? '· ' + c.dong_count + '개동' : ''}<br>
     대표가 ${eok(c.price_manwon)} · 점수 ${c.score} · 가성비 ${c.value_per_eok ?? '-'}<br>
+    ${GROUPS.map(g => `${g.label} ${c['score_' + g.key] ?? '-'}/${g.max}`).join(' · ')}<br>
     ${esc(c.station)} ${c.station_dist_m}m${c.commute_min != null ?
       ' → ' + esc(c.commute_to) + ' 약 ' + Math.round(c.commute_min) + '분' : ''}<br>
     ${esc(c.school || '-')} ${c.school_dist_m ?? '-'}m<br>
@@ -150,6 +160,7 @@ function render() {
     return `<tr data-i="${i}">
       <td class="score">${c.score}</td>
       <td class="value">${c.value_per_eok ?? '-'}</td>
+      ${GROUPS.map(g => `<td class="grp">${c['score_' + g.key] ?? '-'}</td>`).join('')}
       <td>${esc(c.apt)}${mixed ? ' <span class="type mixed">주상복합</span>' : ''}</td>
       <td>${esc(c.sido || '')} ${esc(c.gu)} ${esc(c.dong)}</td>
       <td><span class="band">${esc(c.area_band)}</span></td>

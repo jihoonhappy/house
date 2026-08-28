@@ -8,9 +8,15 @@ CRITERIA = {"price_min": 60000, "price_max": 70000, "lookback_months": 12,
             "price_window_months": 6, "min_trade_count": 2, "area_min_m2": 59,
             "area_max_m2": 0, "station_max_distance_m": 500,
             "school_max_distance_m": 800, "school_filter": False}
-WEIGHTS = {"station_distance": 18, "school_distance": 14, "school_zone": 14,
-           "households": 12, "build_year": 10, "hospital": 10, "mart": 8,
-           "market": 6, "trade_activity": 8}
+WEIGHTS = {"commute": 18, "station_distance": 12, "school_zone": 12,
+           "school_distance": 10, "households": 10, "trade_activity": 10,
+           "build_year": 8, "hospital": 8, "mart": 7, "market": 5}
+GROUPS = {
+    "transit": {"label": "교통", "items": ["commute", "station_distance"]},
+    "school": {"label": "학군", "items": ["school_distance", "school_zone"]},
+    "complex": {"label": "단지", "items": ["households", "build_year", "trade_activity"]},
+    "life": {"label": "생활인프라", "items": ["hospital", "mart", "market"]},
+}
 
 # 수서역(37.4870,127.1015) 바로 옆 단지 / 역에서 먼 단지
 STATIONS = [{"name": "수서", "line": "3호선", "lat": 37.4870, "lon": 127.1015}]
@@ -50,7 +56,11 @@ def run(trades):
         with_score = {**candidate,
                       "score": analyze.score_candidate(
                           candidate, WEIGHTS, CRITERIA, SETTINGS, 2026)}
-        scored.append({**with_score, "value_per_eok": analyze.value_per_eok(with_score)})
+        by_group = analyze.group_scores(
+            candidate, WEIGHTS, CRITERIA, SETTINGS, GROUPS, 2026)
+        scored.append({**with_score,
+                       "value_per_eok": analyze.value_per_eok(with_score),
+                       **{f"score_{k}": v for k, v in by_group.items()}})
     return sorted(scored, key=lambda c: -c["score"])
 
 
@@ -70,6 +80,11 @@ class TestPipeline:
 
     def test_score_is_within_bounds(self):
         assert 0 <= run(trades_for("까치마을", 65000))[0]["score"] <= 100
+
+    def test_group_scores_add_up_to_the_total(self):
+        candidate = run(trades_for("까치마을", 65000))[0]
+        parts = sum(candidate[f"score_{name}"] for name in GROUPS)
+        assert parts == pytest.approx(candidate["score"], abs=0.3)
 
     def test_value_per_eok_is_attached(self):
         candidate = run(trades_for("까치마을", 65000))[0]

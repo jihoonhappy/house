@@ -185,6 +185,14 @@ scoring:
   mart: 7                # 대형마트 접근성
   market: 5              # 전통시장 접근성
 
+# 점수 그룹 — 총점을 성격별로 쪼개 본다.
+# scoring의 모든 항목이 정확히 한 그룹에만 들어가야 한다 (그래야 그룹 합 = 총점).
+score_groups:
+  transit: { label: "교통",       items: [commute, station_distance] }
+  school:  { label: "학군",       items: [school_distance, school_zone] }
+  complex: { label: "단지",       items: [households, build_year, trade_activity] }
+  life:    { label: "생활인프라", items: [hospital, mart, market] }
+
 # 세대수 점수 만점 기준
 households_for_full_score: 1500
 
