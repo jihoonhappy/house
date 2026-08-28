@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>실거주 아파트 후보</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body { font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; background: #f5f6f8; color: #111827; }
+  header { padding: 11px 18px; background: #1f2937; color: #fff; }
+  header h1 { font-size: 16px; }
+  header p { font-size: 11.5px; color: #cbd5e1; margin-top: 3px; }
+  #wrap { display: flex; height: calc(100vh - 56px); }
+  #map { flex: 1; min-width: 300px; }
+  #panel { flex: 1.9; overflow: auto; padding: 10px 12px; }
+  .controls { margin-bottom: 9px; font-size: 12.5px; display: flex; gap: 9px; flex-wrap: wrap; align-items: center; }
+  .controls select, .controls input { padding: 3px 6px; font-size: 12.5px; border: 1px solid #d1d5db; border-radius: 4px; }
+  #count { color: #6b7280; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; background: #fff; }
+  th, td { padding: 5px 7px; border-bottom: 1px solid #e5e7eb; text-align: left; white-space: nowrap; }
+  th { background: #f3f4f6; position: sticky; top: 0; cursor: pointer; user-select: none; font-weight: 600; z-index: 2; }
+  th.sorted::after { content: ' \25BC'; font-size: 9px; color: #6b7280; }
+  th.sorted.asc::after { content: ' \25B2'; }
+  tbody tr:hover { background: #eff6ff; cursor: pointer; }
+  tbody tr.active { background: #dbeafe; }
+  .price { font-weight: 600; color: #b45309; }
+  .score { font-weight: 700; color: #1d4ed8; }
+  .band, .type { background: #f3f4f6; border-radius: 3px; padding: 1px 5px; font-size: 11px; }
+  .type.mixed { background: #fee2e2; color: #b91c1c; }
+  .sub { color: #6b7280; font-size: 11px; }
+  .links a { margin-right: 5px; color: #2563eb; text-decoration: none; font-size: 11px; }
+  .links a:hover { text-decoration: underline; }
+  .empty { padding: 22px; text-align: center; color: #6b7280; }
+  .far { color: #9ca3af; }
+</style>
+</head>
+<body>
+<header>
+  <h1>__TITLE__</h1>
+  <p>대표가는 단지×면적대별 실거래 중앙값입니다. "서울까지"는 최근접역 기준 지하철 <b>추정</b> 소요시간으로,
+     급행·배차간격이 반영되지 않아 실제와 ±10분가량 차이날 수 있습니다. 실제 매물·호가·현장 확인은 별도로 하세요.</p>
+</header>
+<div id="wrap">
+  <div id="map"></div>
+  <div id="panel">
+    <div class="controls">
+      <label>지역 <select id="sidoFilter"><option value="">전체</option></select></label>
+      <label>구 <select id="guFilter"><option value="">전체</option></select></label>
+      <label>면적대 <select id="bandFilter"><option value="">전체</option></select></label>
+      <label>최대 통근 <input type="number" id="maxCommute" value="0" style="width:52px" step="5">분</label>
+      <label>최소 세대수 <input type="number" id="minHh" value="0" style="width:64px" step="100"></label>
+      <label>최소 점수 <input type="number" id="minScore" value="0" style="width:52px"></label>
+      <span id="count"></span>
+    </div>
+    <table id="tbl">
+      <thead><tr>
+        <th data-k="score">점수</th><th data-k="apt">단지</th><th data-k="gu">구/동</th>
+        <th data-k="area_band">면적대</th><th data-k="price_manwon">대표가</th>
+        <th data-k="households">세대수</th><th data-k="build_year">준공</th>
+        <th data-k="station_dist_m">역</th>
+        <th data-k="school_dist_m">초등</th>
+        <th data-k="academy_count">학군</th>
+        <th data-k="hospital_count">병원</th>
+        <th data-k="mart_nearest_m">마트</th>
+        <th data-k="market_nearest_m">시장</th>
+        <th>매물확인</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="empty" id="empty" hidden>조건에 맞는 후보가 없습니다. config.yaml의 조건을 완화해 보세요.</div>
+  </div>
+</div>
+<script>
+const DATA = __DATA__;
+const map = L.map('map').setView([37.55, 126.99], 11);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+  { attribution: '&copy; OpenStreetMap', maxZoom: 19 }).addTo(map);
+
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const eok = mw => (mw / 10000).toFixed(2).replace(/0$/, '') + '억';
+const ym = s => s ? `${String(s).slice(2, 4)}.${String(s).slice(4, 6)}` : '-';
+const m = v => v == null ? '<span class="far">-</span>' : v + 'm';
+const n = v => v == null ? '<span class="far">-</span>' : v;
+
+const layer = L.layerGroup().addTo(map);
+const markers = DATA.map((c, i) => {
+  const mixed = (c.complex_type || '').includes('주상복합');
+  const mk = L.circleMarker([c.lat, c.lon], {
+    radius: 7, color: mixed ? '#b91c1c' : '#1d4ed8',
+    fillColor: mixed ? '#ef4444' : '#3b82f6', fillOpacity: .8, weight: 1 });
+  mk.bindPopup(`<b>${esc(c.apt)}</b> <span class="band">${esc(c.area_band)}</span><br>
+    ${esc(c.sido || '')} ${esc(c.gu)} ${esc(c.dong)} · ${esc(c.complex_type || '분류미상')} ${n(c.households)}세대
+    ${c.dong_count ? '· ' + c.dong_count + '개동' : ''}<br>
+    대표가 ${eok(c.price_manwon)} · 점수 ${c.score}<br>
+    ${esc(c.station)} ${c.station_dist_m}m${c.commute_min != null ?
+      ' → ' + esc(c.commute_to) + ' 약 ' + Math.round(c.commute_min) + '분' : ''}<br>
+    ${esc(c.school || '-')} ${c.school_dist_m ?? '-'}m<br>
+    중 ${c.middle_school_count ?? 0}곳 · 고 ${c.high_school_count ?? 0}곳 · 학원 ${c.academy_count ?? 0}<br>
+    병원 ${c.hospital_count ?? 0} · 마트 ${c.mart_nearest_m ?? '-'}m · 시장 ${c.market_nearest_m ?? '-'}m<br>
+    <small>${esc(c.price_basis)} · 최근거래 ${ym(c.latest_deal_ym)} ${eok(c.latest_price_manwon)}
+    ${c.approved_on ? '· 사용승인 ' + esc(c.approved_on) : ''}</small>`);
+  mk.on('click', () => highlight(i));
+  return mk;
+});
+
+const uniq = k => [...new Set(DATA.map(c => c[k]).filter(Boolean))].sort();
+uniq('sido').forEach(v => sidoFilter.insertAdjacentHTML('beforeend', `<option>${esc(v)}</option>`));
+uniq('gu').forEach(v => guFilter.insertAdjacentHTML('beforeend', `<option>${esc(v)}</option>`));
+uniq('area_band').forEach(v => bandFilter.insertAdjacentHTML('beforeend', `<option>${esc(v)}</option>`));
+
+let sortKey = 'score', sortAsc = false, visible = [];
+
+function links(c) {
+  const q = encodeURIComponent(`${c.gu} ${c.apt}`);
+  return `<span class="links">
+    <a href="https://m.land.naver.com/search/result/${q}" target="_blank" rel="noopener">네이버</a>
+    <a href="https://hogangnono.com/search?q=${q}" target="_blank" rel="noopener">호갱</a>
+    <a href="https://map.kakao.com/?q=${q}" target="_blank" rel="noopener">지도</a></span>`;
+}
+
+function render() {
+  const gu = guFilter.value, band = bandFilter.value, sido = sidoFilter.value;
+  const minS = +minScore.value || 0, minH = +minHh.value || 0;
+  const maxC = +maxCommute.value || 0;
+  visible = DATA.map((c, i) => ({ c, i }))
+    .filter(({ c }) => (!sido || c.sido === sido) && (!gu || c.gu === gu)
+      && (!band || c.area_band === band)
+      && c.score >= minS && (c.households ?? 0) >= minH
+      && (!maxC || (c.commute_min != null && c.commute_min <= maxC)))
+    .sort((a, b) => {
+      const x = a.c[sortKey] ?? -Infinity, y = b.c[sortKey] ?? -Infinity;
+      const r = x < y ? -1 : x > y ? 1 : 0;
+      return sortAsc ? r : -r;
+    });
+
+  document.querySelector('#tbl tbody').innerHTML = visible.map(({ c, i }) => {
+    const mixed = (c.complex_type || '').includes('주상복합');
+    return `<tr data-i="${i}">
+      <td class="score">${c.score}</td>
+      <td>${esc(c.apt)}${mixed ? ' <span class="type mixed">주상복합</span>' : ''}</td>
+      <td>${esc(c.sido || '')} ${esc(c.gu)} ${esc(c.dong)}</td>
+      <td><span class="band">${esc(c.area_band)}</span></td>
+      <td class="price">${eok(c.price_manwon)}</td>
+      <td>${c.commute_min == null ? '<span class="far">-</span>'
+            : Math.round(c.commute_min) + '분<span class="sub"> ' + esc(c.commute_to) + '</span>'}</td>
+      <td>${n(c.households)}${c.dong_count ? `<span class="sub"> /${c.dong_count}동</span>` : ''}</td>
+      <td>${esc(c.build_year)}</td>
+      <td>${esc(c.station)}<span class="sub"> ${c.station_dist_m}m</span></td>
+      <td>${esc((c.school || '-').replace(/^서울/, ''))}<span class="sub"> ${c.school_dist_m ?? '-'}m</span></td>
+      <td>중${c.middle_school_count ?? 0}·고${c.high_school_count ?? 0}<span class="sub"> 학원${c.academy_count ?? 0}</span></td>
+      <td>${c.hospital_count ?? 0}<span class="sub"> ${c.hospital_nearest_m ?? '-'}m</span></td>
+      <td>${m(c.mart_nearest_m)}</td>
+      <td>${m(c.market_nearest_m)}</td>
+      <td>${links(c)}</td>
+    </tr>`;
+  }).join('');
+  count.textContent = `${visible.length}곳 / 전체 ${DATA.length}곳`;
+  document.getElementById('empty').hidden = visible.length > 0;
+
+  layer.clearLayers();
+  visible.forEach(({ i }) => layer.addLayer(markers[i]));
+  document.querySelectorAll('#tbl th').forEach(th => {
+    th.classList.toggle('sorted', th.dataset.k === sortKey);
+    th.classList.toggle('asc', th.dataset.k === sortKey && sortAsc);
+  });
+}
+
+function highlight(i) {
+  document.querySelectorAll('#tbl tbody tr').forEach(tr =>
+    tr.classList.toggle('active', +tr.dataset.i === i));
+  const row = document.querySelector(`#tbl tbody tr[data-i="${i}"]`);
+  if (row) row.scrollIntoView({ block: 'nearest' });
+}
+
+document.querySelector('#tbl tbody').addEventListener('click', e => {
+  const tr = e.target.closest('tr');
+  if (!tr || e.target.closest('a')) return;
+  const mk = markers[tr.dataset.i];
+  map.setView(mk.getLatLng(), 16); mk.openPopup(); highlight(+tr.dataset.i);
+});
+document.querySelectorAll('#tbl th[data-k]').forEach(th => th.onclick = () => {
+  if (sortKey === th.dataset.k) sortAsc = !sortAsc;
+  else { sortKey = th.dataset.k; sortAsc = false; }
+  render();
+});
+sidoFilter.onchange = guFilter.onchange = bandFilter.onchange = render;
+minScore.oninput = minHh.oninput = maxCommute.oninput = render;
+render();
+if (DATA.length) map.fitBounds(L.latLngBounds(DATA.map(c => [c.lat, c.lon])).pad(0.1));
+</script>
+</body>
+</html>

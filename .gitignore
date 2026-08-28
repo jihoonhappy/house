@@ -1,0 +1,22 @@
+# 실제 API 키가 들어있는 설정 — 절대 커밋 금지 (config.example.yaml만 공유)
+config.yaml
+
+# 수집 캐시
+data/
+
+# 루트에 생성되는 대시보드 산출물.
+# aptfinder/templates/dashboard.html은 소스이므로 경로를 루트로 한정한다.
+/dashboard.html
+
+# 내려받은 원본 데이터 (44MB. README의 링크에서 각자 받는다)
+*.csv
+
+# macOS
+.DS_Store
+
+# python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+.coverage
