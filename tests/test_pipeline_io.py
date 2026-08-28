@@ -343,3 +343,33 @@ class TestNationwideClassification:
         result, _ = pipeline._classify_nationwide(cfg, self._candidates(), {"서울"})
         assert len(result) == 2
         assert result[0]["complex_type"] == ""
+
+
+class TestDestinationCoords:
+    STATIONS = [{"name": "강남", "line": "2호선", "lat": 37.4980, "lon": 127.0279},
+                {"name": "강남", "line": "신분당선", "lat": 37.4968, "lon": 127.0281},
+                {"name": "수서", "line": "3호선", "lat": 37.4870, "lon": 127.1015}]
+
+    def test_resolves_named_destinations(self):
+        assert pipeline.destination_coords(self.STATIONS, ["강남"]) == {
+            "강남": (37.4980, 127.0279)}
+
+    def test_ignores_stations_not_asked_for(self):
+        assert "수서" not in pipeline.destination_coords(self.STATIONS, ["강남"])
+
+    def test_takes_the_first_entry_for_duplicated_names(self):
+        coords = pipeline.destination_coords(self.STATIONS, ["강남"])
+        assert coords["강남"] == (37.4980, 127.0279)   # 2호선 쪽이 먼저
+
+    def test_unknown_destination_is_skipped(self):
+        assert pipeline.destination_coords(self.STATIONS, ["없는역"]) == {}
+
+
+class TestDrivingToggle:
+    def test_disabled_returns_none(self, cfg, data_dir):
+        assert pipeline.make_driving_times({**cfg, "access": {"driving": False}}) is None
+
+    def test_enabled_builds_lookup(self, cfg, data_dir):
+        found = pipeline.make_driving_times(
+            {**cfg, "access": {"driving": True, "driving_departure_hour": 8}})
+        assert found is not None and found.departure.endswith("0800")

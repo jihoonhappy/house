@@ -125,7 +125,8 @@ class TestTableIntegrity:
         import re
         html = report.render([CANDIDATE], CRITERIA)
         keys = re.findall(r'<th data-k="([^"]+)"', html)
-        allowed = set(CANDIDATE) | {"value_per_eok", "commute_min", "sido",
+        allowed = set(CANDIDATE) | {"value_per_eok", "commute_min", "commute_mode",
+                                    "transit_min", "drive_min", "sido",
                                     "middle_school_count", "high_school_count"}
         assert [k for k in keys if k not in allowed] == []
 
@@ -161,3 +162,16 @@ class TestGroupColumns:
     def test_write_passes_groups_through(self, tmp_path):
         out = report.write([CANDIDATE], CRITERIA, tmp_path / "d.html", GROUPS, MAXIMA)
         assert "생활인프라" in out.read_text(encoding="utf-8")
+
+
+class TestCommuteModeColumns:
+    def test_shows_transit_and_driving_side_by_side(self):
+        html = report.render([{**CANDIDATE, "commute_min": 40.0, "commute_mode": "자차",
+                               "transit_min": 53.0, "drive_min": 40.0, "drive_km": 25.0,
+                               "drive_toll": 0, "transit_to": "시청", "drive_to": "시청"}],
+                             CRITERIA)
+        assert "지하철·자차" in html
+        assert "transit_min" in html and "drive_min" in html
+
+    def test_transit_only_filter_exists(self):
+        assert 'id="transitOnly"' in report.render([CANDIDATE], CRITERIA)

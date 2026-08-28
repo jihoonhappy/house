@@ -130,14 +130,41 @@ def attach_commute(
     candidate: Mapping[str, Any],
     graph: Any,
     destinations: Sequence[str],
+    driving: Any = None,
+    destination_coords: Mapping[str, tuple[float, float]] | None = None,
 ) -> dict[str, Any]:
-    """최근접역에서 서울 거점역까지 추정 소요시간을 붙인다."""
+    """서울 거점까지 지하철·자차 소요시간을 붙이고, 빠른 쪽을 대표값으로 삼는다.
+
+    실제로 사람은 더 빠른 수단을 고르므로 min을 쓴다. 다만 어느 쪽이 빨랐는지
+    (commute_mode)와 각각의 값도 남겨서 판단 근거가 보이게 한다.
+    """
     station = candidate.get("station")
-    access = graph.best_access(station, destinations) if station else {"minutes": None,
-                                                                      "destination": ""}
-    return {**candidate,
-            "commute_min": access["minutes"],
-            "commute_to": access["destination"]}
+    transit = (graph.best_access(station, destinations) if station
+               else {"minutes": None, "destination": ""})
+
+    drive: dict[str, Any] = {"minutes": None, "destination": "", "km": None, "toll": None}
+    lat, lon = candidate.get("lat"), candidate.get("lon")
+    if driving and destination_coords and isinstance(lat, (int, float)) \
+            and isinstance(lon, (int, float)):
+        drive = driving.best_access(lat, lon, destination_coords)
+
+    options = [(transit["minutes"], "지하철", transit["destination"]),
+               (drive["minutes"], "자차", drive["destination"])]
+    usable = [o for o in options if o[0] is not None]
+    best = min(usable, key=lambda o: o[0]) if usable else (None, "", "")
+
+    return {
+        **candidate,
+        "transit_min": transit["minutes"],
+        "transit_to": transit["destination"],
+        "drive_min": drive["minutes"],
+        "drive_to": drive["destination"],
+        "drive_km": drive.get("km"),
+        "drive_toll": drive.get("toll"),
+        "commute_min": best[0],
+        "commute_mode": best[1],
+        "commute_to": best[2],
+    }
 
 
 def passes_commute(candidate: Mapping[str, Any], criteria: Mapping[str, Any]) -> bool:

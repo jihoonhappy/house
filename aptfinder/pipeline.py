@@ -13,6 +13,7 @@ from typing import Any
 
 from . import analyze, matching, report
 from .amenities import AmenityFinder
+from .driving import DrivingTimes
 from . import config as config_module
 from .config import all_districts, data_dir, require_key
 from .errors import MissingDataError
@@ -29,7 +30,8 @@ CSV_COLUMNS = [
     "score", "score_transit", "score_school", "score_complex", "score_life",
     "value_per_eok", "gu", "dong", "apt", "area_band",
     "price_manwon", "price_basis",
-    "commute_min", "commute_to",
+    "commute_min", "commute_mode", "commute_to",
+    "transit_min", "drive_min", "drive_km", "drive_toll",
     "households", "dong_count", "complex_type", "parking", "trade_count",
     "latest_deal_ym", "latest_price_manwon", "build_year",
     "station", "station_line", "station_dist_m",
@@ -65,6 +67,29 @@ def build_transit_graph(cfg: Mapping[str, Any], station_list: Sequence[Mapping[s
     for station in station_list:
         coords.setdefault(station["name"], (station["lat"], station["lon"]))
     return TransitGraph(line_rows, coords, cfg.get("transit") or {})
+
+
+def make_driving_times(cfg: Mapping[str, Any]) -> DrivingTimes | None:
+    """자차 소요시간 조회기. access.driving이 꺼져 있으면 None."""
+    access = cfg.get("access") or {}
+    if not access.get("driving"):
+        return None
+    budget = (cfg.get("api_limits") or {}).get("kakao_driving_call_budget")
+    return DrivingTimes(
+        require_key(cfg, "kakao_rest"), data_dir() / "driving_cache.json",
+        departure_hour=access.get("driving_departure_hour", 8), call_budget=budget)
+
+
+def destination_coords(
+    station_list: Sequence[Mapping[str, Any]], destinations: Sequence[str]
+) -> dict[str, tuple[float, float]]:
+    """거점역 이름 → 좌표. 자차 길찾기의 도착지로 쓴다."""
+    coords: dict[str, tuple[float, float]] = {}
+    for station in station_list:
+        name = station["name"]
+        if name in destinations and name not in coords:
+            coords[name] = (station["lat"], station["lon"])
+    return coords
 
 
 def scoring_settings(cfg: Mapping[str, Any]) -> dict[str, Any]:
@@ -158,7 +183,22 @@ def run_analyze(cfg: Mapping[str, Any]) -> list[dict[str, Any]]:
 
     graph = build_transit_graph(cfg, station_list, line_rows)
     destinations = (cfg.get("access") or {}).get("destinations") or []
-    commuting = [analyze.attach_commute(c, graph, destinations) for c in near_station]
+    drives = make_driving_times(cfg)
+    coords = destination_coords(station_list, destinations) if drives else {}
+    commuting = []
+    for index, candidate in enumerate(near_station, 1):
+        try:
+            commuting.append(
+                analyze.attach_commute(candidate, graph, destinations, drives, coords))
+        except ApiError as e:
+            log.warning("자차 조회 중단, 이후는 지하철만 사용: %s", e)
+            drives = None
+            commuting.append(analyze.attach_commute(candidate, graph, destinations))
+        if drives and index % 200 == 0:
+            log.info("  자차 소요시간 %d/%d", index, len(near_station))
+    if drives:
+        drives.save()
+        log.info("자차 조회 완료 (호출 %d건, 기준 %s)", drives.calls, drives.departure)
     reachable = [c for c in commuting if analyze.passes_commute(c, criteria)]
     limit = criteria.get("max_commute_min") or 0
     log.info("서울 접근 %s 조건 통과: %d곳",

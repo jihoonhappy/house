@@ -37,6 +37,11 @@ def trades_for(apt, price):
              "build_year": "2015", "deal_ym": ym} for ym in ("202607", "202608")]
 
 
+class _FakeGraph:
+    def best_access(self, station, destinations):
+        return {"minutes": 28.4, "destination": destinations[0]}
+
+
 def run(trades):
     candidates = analyze.build_candidates(trades, BANDS, CRITERIA, {"202607", "202608"})
     located = [{**c, "lat": COORDS[c["apt"]][0], "lon": COORDS[c["apt"]][1]}
@@ -49,8 +54,9 @@ def run(trades):
                  "general_hospital_nearest": "수서병원", "general_hospital_nearest_m": 1800,
                  "mart_nearest": "이마트", "mart_nearest_m": 700,
                  "market_nearest": "수서시장", "market_nearest_m": 900,
-                 "academy_count": 30, "commute_min": 28.4, "commute_to": "강남"}
+                 "academy_count": 30}
                 for c in passed]
+    enriched = [analyze.attach_commute(c, _FakeGraph(), ["강남"]) for c in enriched]
     scored = []
     for candidate in enriched:
         with_score = {**candidate,

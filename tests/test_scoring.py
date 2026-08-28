@@ -203,3 +203,64 @@ class TestValuePerEok:
 
     def test_missing_score_is_none(self):
         assert analyze.value_per_eok({"price_manwon": 50000}) is None
+
+
+class FakeDriving:
+    def __init__(self, result):
+        self.result = result
+        self.calls = 0
+
+    def best_access(self, lat, lon, destinations):
+        self.calls += 1
+        return self.result
+
+
+DEST_COORDS = {"강남": (37.4980, 127.0279), "시청": (37.5657, 126.9771)}
+
+
+class TestCombinedCommute:
+    GRAPH = FakeGraph({("일산", "시청"): 53.0, ("정자", "강남"): 27.0})
+
+    def test_takes_the_faster_of_transit_and_driving(self):
+        drive = FakeDriving({"minutes": 40.0, "destination": "시청", "km": 25.0, "toll": 0})
+        result = analyze.attach_commute({"station": "일산", "lat": 37.68, "lon": 126.77},
+                                        self.GRAPH, ["시청"], drive, DEST_COORDS)
+        assert result["commute_min"] == 40.0
+        assert result["commute_mode"] == "자차"
+        assert result["transit_min"] == 53.0
+        assert result["drive_min"] == 40.0
+
+    def test_keeps_transit_when_it_is_faster(self):
+        drive = FakeDriving({"minutes": 60.0, "destination": "강남", "km": 30.0, "toll": 0})
+        result = analyze.attach_commute({"station": "정자", "lat": 37.36, "lon": 127.10},
+                                        self.GRAPH, ["강남"], drive, DEST_COORDS)
+        assert result["commute_min"] == 27.0
+        assert result["commute_mode"] == "지하철"
+
+    def test_works_without_driving_lookup(self):
+        result = analyze.attach_commute({"station": "정자"}, self.GRAPH, ["강남"])
+        assert result["commute_min"] == 27.0
+        assert result["drive_min"] is None
+        assert result["commute_mode"] == "지하철"
+
+    def test_driving_rescues_unreachable_by_transit(self):
+        drive = FakeDriving({"minutes": 44.0, "destination": "시청", "km": 28.0, "toll": 1200})
+        result = analyze.attach_commute({"station": "없는역", "lat": 37.7, "lon": 126.8},
+                                        self.GRAPH, ["시청"], drive, DEST_COORDS)
+        assert result["commute_min"] == 44.0
+        assert result["commute_mode"] == "자차"
+        assert result["drive_toll"] == 1200
+
+    def test_neither_available_is_none(self):
+        drive = FakeDriving({"minutes": None, "destination": "", "km": None, "toll": None})
+        result = analyze.attach_commute({"station": "없는역", "lat": 37.7, "lon": 126.8},
+                                        self.GRAPH, ["시청"], drive, DEST_COORDS)
+        assert result["commute_min"] is None
+        assert result["commute_mode"] == ""
+
+    def test_candidate_without_coordinates_skips_driving(self):
+        drive = FakeDriving({"minutes": 10.0, "destination": "강남", "km": 5.0, "toll": 0})
+        result = analyze.attach_commute({"station": "정자"}, self.GRAPH, ["강남"],
+                                        drive, DEST_COORDS)
+        assert drive.calls == 0
+        assert result["drive_min"] is None
