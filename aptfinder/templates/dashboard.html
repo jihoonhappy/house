@@ -27,6 +27,9 @@
   tbody tr.active { background: #dbeafe; }
   .price { font-weight: 600; color: #b45309; }
   .value { font-weight: 600; color: #047857; }
+  .up { color: #dc2626; font-size: 11px; }
+  .down { color: #2563eb; font-size: 11px; }
+  .spark { vertical-align: middle; }
   .grp { color: #1f2937; background: #f9fafb; }
   th.grp-h { background: #eef2ff; }
   .score { font-weight: 700; color: #1d4ed8; }
@@ -68,6 +71,9 @@
         <th data-k="score">점수</th><th data-k="value_per_eok">가성비</th>
         <th data-k="apt">단지</th><th data-k="gu">구/동</th>
         <th data-k="area_band">면적대</th><th data-k="price_manwon">대표가</th>
+        <th data-k="vs_avg_pct">7년평균비</th>
+        <th data-k="vs_peak_pct">전고점비</th>
+        <th>추이</th>
         <th data-k="commute_min">서울까지</th>
         <th data-k="transit_min">지하철·자차</th>
         <th data-k="households">세대수</th><th data-k="build_year">준공</th>
@@ -96,6 +102,22 @@ const map = L.map('map').setView([37.55, 126.99], 11);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
   { attribution: '&copy; OpenStreetMap', maxZoom: 19 }).addTo(map);
 
+const pct = v => v == null ? '' : (v > 0 ? '+' : '') + v.toFixed(1) + '%';
+// 반기 중앙값 시계열을 작은 꺾은선으로. 표에서 추세를 바로 보기 위한 것.
+function spark(series) {
+  if (!series || series.length < 2) return '<span class="far">-</span>';
+  const w = 78, h = 20, vals = series.map(p => p.median);
+  const lo = Math.min(...vals), hi = Math.max(...vals), span = hi - lo || 1;
+  const pts = vals.map((v, i) =>
+    `${(i / (vals.length - 1) * (w - 2) + 1).toFixed(1)},${(h - 2 - (v - lo) / span * (h - 4)).toFixed(1)}`);
+  const last = vals[vals.length - 1], first = vals[0];
+  return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"
+    role="img" aria-label="${series[0].half}부터 ${series[series.length-1].half}까지 가격 추이">
+    <polyline points="${pts.join(' ')}" fill="none"
+      stroke="${last >= first ? '#dc2626' : '#2563eb'}" stroke-width="1.4"/>
+    <circle cx="${pts[pts.length-1].split(',')[0]}" cy="${pts[pts.length-1].split(',')[1]}"
+      r="1.8" fill="${last >= first ? '#dc2626' : '#2563eb'}"/></svg>`;
+}
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const eok = mw => (mw / 10000).toFixed(2).replace(/0$/, '') + '억';
@@ -121,6 +143,9 @@ const markers = DATA.map((c, i) => {
     ${esc(c.school || '-')} ${c.school_dist_m ?? '-'}m<br>
     중 ${c.middle_school_count ?? 0}곳 · 고 ${c.high_school_count ?? 0}곳 · 학원 ${c.academy_count ?? 0}<br>
     병원 ${c.hospital_count ?? 0} · 마트 ${c.mart_nearest_m ?? '-'}m · 시장 ${c.market_nearest_m ?? '-'}m<br>
+    ${c.price_avg_manwon != null ? `7년평균 ${eok(c.price_avg_manwon)}(${pct(c.vs_avg_pct)}) ·
+      전고점 ${eok(c.price_peak_manwon)} ${esc(c.price_peak_half)}(${pct(c.vs_peak_pct)}) ·
+      이력 ${c.history_count}건<br>` : ''}
     <small>${esc(c.price_basis)} · 최근거래 ${ym(c.latest_deal_ym)} ${eok(c.latest_price_manwon)}
     ${c.approved_on ? '· 사용승인 ' + esc(c.approved_on) : ''}</small>`);
   mk.on('click', () => highlight(i));
@@ -170,6 +195,11 @@ function render() {
       <td>${esc(c.sido || '')} ${esc(c.gu)} ${esc(c.dong)}</td>
       <td><span class="band">${esc(c.area_band)}</span></td>
       <td class="price">${eok(c.price_manwon)}</td>
+      <td>${c.price_avg_manwon == null ? '<span class="far">-</span>'
+            : `${eok(c.price_avg_manwon)}<span class="${c.vs_avg_pct >= 0 ? 'up' : 'down'}"> ${pct(c.vs_avg_pct)}</span>`}</td>
+      <td>${c.price_peak_manwon == null ? '<span class="far">-</span>'
+            : `${eok(c.price_peak_manwon)}<span class="${c.vs_peak_pct >= 0 ? 'up' : 'down'}"> ${pct(c.vs_peak_pct)}</span>`}</td>
+      <td>${spark(c.price_history)}</td>
       <td>${c.commute_min == null ? '<span class="far">-</span>'
             : `<b>${Math.round(c.commute_min)}분</b><span class="sub"> ${c.commute_mode === '자차' ? '🚗' : '🚇'} ${esc(c.commute_to)}</span>`}</td>
       <td class="sub">${c.transit_min == null ? '-' : Math.round(c.transit_min)} /

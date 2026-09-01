@@ -127,6 +127,7 @@ class TestTableIntegrity:
         keys = re.findall(r'<th data-k="([^"]+)"', html)
         allowed = set(CANDIDATE) | {"value_per_eok", "commute_min", "commute_mode",
                                     "transit_min", "drive_min", "sido",
+                                    "vs_avg_pct", "vs_peak_pct",
                                     "middle_school_count", "high_school_count"}
         assert [k for k in keys if k not in allowed] == []
 
@@ -175,3 +176,23 @@ class TestCommuteModeColumns:
 
     def test_transit_only_filter_exists(self):
         assert 'id="transitOnly"' in report.render([CANDIDATE], CRITERIA)
+
+
+class TestPriceHistoryColumns:
+    HIST = {**CANDIDATE, "price_avg_manwon": 62000, "price_peak_manwon": 70000,
+            "price_peak_half": "2022H1", "price_low_manwon": 55000,
+            "vs_avg_pct": 4.8, "vs_peak_pct": -7.1, "history_count": 42,
+            "price_history": [{"half": "2021H1", "median": 58000, "count": 5},
+                              {"half": "2021H2", "median": 65000, "count": 7},
+                              {"half": "2022H1", "median": 70000, "count": 4}]}
+
+    def test_renders_history_columns(self):
+        html = report.render([self.HIST], CRITERIA)
+        assert "7년평균비" in html and "전고점비" in html and "추이" in html
+
+    def test_includes_sparkline_builder(self):
+        assert "function spark(series)" in report.render([self.HIST], CRITERIA)
+
+    def test_history_series_reaches_the_page(self):
+        html = report.render([self.HIST], CRITERIA)
+        assert '"half": "2021H2"' in html or '"half":"2021H2"' in html

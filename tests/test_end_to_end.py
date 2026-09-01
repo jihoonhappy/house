@@ -1,7 +1,7 @@
 """거래 원본 → 점수화된 후보까지의 통합 흐름 (네트워크 없음)."""
 import pytest
 
-from aptfinder import analyze
+from aptfinder import analyze, history
 
 BANDS = [{"label": "59㎡형", "min": 55, "max": 66}, {"label": "84㎡형", "min": 80, "max": 96}]
 CRITERIA = {"price_min": 60000, "price_max": 70000, "lookback_months": 12,
@@ -64,9 +64,9 @@ def run(trades):
                           candidate, WEIGHTS, CRITERIA, SETTINGS, 2026)}
         by_group = analyze.group_scores(
             candidate, WEIGHTS, CRITERIA, SETTINGS, GROUPS, 2026)
-        scored.append({**with_score,
-                       "value_per_eok": analyze.value_per_eok(with_score),
-                       **{f"score_{k}": v for k, v in by_group.items()}})
+        scored.append(history.attach({**with_score,
+                                      "value_per_eok": analyze.value_per_eok(with_score),
+                                      **{f"score_{k}": v for k, v in by_group.items()}}, {}))
     return sorted(scored, key=lambda c: -c["score"])
 
 

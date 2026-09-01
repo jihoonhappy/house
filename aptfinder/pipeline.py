@@ -11,7 +11,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from . import analyze, matching, report
+from . import analyze, history, matching, report
 from .amenities import AmenityFinder
 from .driving import DrivingTimes
 from . import config as config_module
@@ -30,6 +30,8 @@ CSV_COLUMNS = [
     "score", "score_transit", "score_school", "score_complex", "score_life",
     "value_per_eok", "gu", "dong", "apt", "area_band",
     "price_manwon", "price_basis",
+    "price_avg_manwon", "price_peak_manwon", "price_peak_half", "price_low_manwon",
+    "vs_avg_pct", "vs_peak_pct", "history_count",
     "commute_min", "commute_mode", "commute_to",
     "transit_min", "drive_min", "drive_km", "drive_toll",
     "households", "dong_count", "complex_type", "parking", "trade_count",
@@ -105,26 +107,37 @@ def scoring_settings(cfg: Mapping[str, Any]) -> dict[str, Any]:
 
 def run_collect(cfg: Mapping[str, Any]) -> None:
     """1단계: 실거래·지하철역·학교·공동주택 정보를 모은다."""
-    log.info("=== 1/7 실거래가 수집 ===")
+    log.info("=== 1/8 실거래가 수집 ===")
     rtms.collect(cfg, require_key(cfg, "data_go_kr"))
-    log.info("=== 2/7 지하철역 좌표 ===")
+    log.info("=== 2/8 지하철역 좌표 ===")
     stations.collect(require_key(cfg, "seoul_open_data"))
-    log.info("=== 3/7 단지 식별정보 (세대수·단지명) ===")
+    log.info("=== 3/8 단지 식별정보 (세대수·단지명) ===")
     reb.load(cfg.get("reb_csv"))
-    log.info("=== 4/7 공동주택 정보 (주상복합 판별) ===")
+    log.info("=== 4/8 공동주택 정보 (주상복합 판별) ===")
     aptinfo.collect(require_key(cfg, "seoul_open_data"))
-    log.info("=== 5/7 전국 단지 목록 (서울 밖 주상복합 판별) ===")
+    log.info("=== 5/8 전국 단지 목록 (서울 밖 주상복합 판별) ===")
     try:
         aptlist.collect(require_key(cfg, "data_go_kr"),
                         aptlist.sido_codes(all_districts(cfg)))
     except ApiError as e:
         log.warning("단지 목록을 건너뜁니다 — 서울 밖 단지는 분류 미확인으로 남습니다.\n%s", e)
-    log.info("=== 6/7 지하철 노선/역 순서 ===")
+    log.info("=== 6/8 지하철 노선/역 순서 ===")
     subway_lines.collect(require_key(cfg, "seoul_open_data"))
-    log.info("=== 7/7 학교 위치 ===")
+    log.info("=== 7/8 학교 위치 ===")
     schools.collect(require_key(cfg, "neis"), make_geocoder(cfg),
                     cfg.get("school_office_codes") or schools.DEFAULT_OFFICE_CODES)
+    months = cfg.get("history_months") or 84
+    log.info("=== 8/8 가격 이력 %d개월(%.0f년) ===", months, months / 12)
+    history.build(cfg, require_key(cfg, "data_go_kr"), all_districts(cfg))
     log.info("완료. 다음: python3 02_analyze.py")
+
+
+def _load_optional(name: str) -> dict[str, Any]:
+    """있으면 읽고 없으면 빈 dict. 선택적 산출물용."""
+    path = data_dir() / name
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _load(name: str) -> Any:
@@ -231,6 +244,9 @@ def run_analyze(cfg: Mapping[str, Any]) -> list[dict[str, Any]]:
     finder.save()
     log.info("편의시설 조사 완료 (카카오 호출 %d건)", finder.calls)
 
+    price_history = _load_optional("price_history.json")
+    if price_history:
+        log.info("가격 이력 적용: %d개 단지·면적대", len(price_history))
     groups = cfg.get("score_groups") or {}
     scored = []
     for candidate in surveyed:
@@ -239,11 +255,11 @@ def run_analyze(cfg: Mapping[str, Any]) -> list[dict[str, Any]]:
                           candidate, cfg["scoring"], criteria, settings)}
         by_group = analyze.group_scores(
             candidate, cfg["scoring"], criteria, settings, groups)
-        scored.append({
+        scored.append(history.attach({
             **with_score,
             "value_per_eok": analyze.value_per_eok(with_score),
             **{f"score_{name}": value for name, value in by_group.items()},
-        })
+        }, price_history))
     scored.sort(key=lambda c: -c["score"])
     return _save(scored, cfg)
 
