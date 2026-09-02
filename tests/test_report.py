@@ -21,7 +21,7 @@ CANDIDATE = {
 
 class TestTitle:
     def test_reflects_configured_conditions(self):
-        title = report.build_title(CRITERIA)
+        title = report.build_title({**CRITERIA, "require_station": True})
         assert "6~7억" in title and "59㎡+" in title and "500m" in title
 
     def test_omits_area_clause_when_no_minimum(self):
