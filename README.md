@@ -38,7 +38,7 @@
 코드를 고치기 전에 먼저 읽으세요.
 
 ```bash
-python3 -m pytest -q                  # 332개
+python3 -m pytest -q                  # 340개
 node tools/verify_dashboard.mjs       # 대시보드 열 정합성 (JS를 실제 실행해 검사)
 ```
 
@@ -68,9 +68,11 @@ aptfinder/             실제 로직
   sources/             rtms(실거래) · stations(지하철역) · subway_lines(노선 순서)
                        · schools(학교) · reb(단지 식별정보 CSV) · aptinfo(서울 공동주택)
                        · aptlist(전국 단지목록) · aptbasis(전국 단지 기본정보)
+bundled/               수도권 단지 데이터 (원본 44MB → 0.6MB 파생본)
+tools/build_reb_bundle.py   동봉본 재생성
 tools/verify_dashboard.mjs  대시보드 열 정합성 검사 (브라우저 없이 JS 실행)
 CLAUDE.md              설계 의도·버그 이력·불변식 (개발자용)
-tests/                 pytest (332개, 커버리지 92%)
+tests/                 pytest (340개, 커버리지 92%)
 ```
 
 ## 1. 준비 — API 키 발급 (모두 무료)
@@ -89,11 +91,11 @@ tests/                 pytest (332개, 커버리지 92%)
      `config.yaml`의 `api_limits.kakao_daily_call_budget`(기본 25,000)이 예산을 넘기 전에
      캐시를 저장하고 중단시킵니다. 다음 날 다시 실행하면 남은 것부터 이어서 처리합니다.
 
-5. **한국부동산원 단지 식별정보 CSV** — 활용신청 없이 바로 내려받습니다.
-   [기본정보 (15106861)](https://www.data.go.kr/data/15106861/fileData.do) 를 받아
-   프로젝트 폴더(`house/`)에 그대로 두세요. 파일명은 건드리지 않아도 자동으로 찾습니다.
-   세대수·동수·사용승인일과 단지명 별칭을 제공하며, **지번 주소로 실거래 단지와
-   100% 매칭**됩니다. 없으면 세대수·주상복합 필터가 동작하지 않습니다.
+5. **한국부동산원 단지 식별정보** — 수도권분은 `bundled/`에 동봉돼 있어 **추가 작업이
+   없습니다.** 수도권 밖으로 넓히려면
+   [기본정보 (15106861)](https://www.data.go.kr/data/15106861/fileData.do)에서 원본 CSV를
+   받아 프로젝트 폴더에 두세요(활용신청 불필요, 파일명 그대로 두면 자동 탐색).
+   자세한 내용은 `bundled/SOURCE.md`.
 
 ```bash
 cp config.example.yaml config.yaml   # 그 뒤 키 4개를 채워 넣기
@@ -191,7 +193,7 @@ open dashboard.html
 
 ```bash
 pip3 install pytest pytest-cov
-python3 -m pytest -q                              # 332 passed
+python3 -m pytest -q                              # 340 passed
 python3 -m pytest --cov=aptfinder -q              # 커버리지 92%
 ```
 

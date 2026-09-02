@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import csv
+import gzip
 import io
 import json
 import re
@@ -23,6 +24,10 @@ from ..logging_util import get_logger
 
 APARTMENT_TYPE = "1"  # 1=아파트, 2=연립주택, 3=다세대주택
 CSV_KEYWORD = "공동주택 단지 식별정보"
+# 원본 CSV는 44MB라 저장소에 두지 않는다. 대신 이 도구가 쓰는 수도권 아파트만
+# 추려 압축한 사본을 동봉해, CSV 없이 클론해도 바로 돌아가게 한다 (약 0.6MB).
+BUNDLE_NAME = "reb_metro.json.gz"
+METRO_PREFIXES = ("11", "41", "28")   # 서울 · 경기 · 인천
 ENCODINGS = ("utf-8-sig", "cp949", "euc-kr")
 
 # 지번 주소의 끝부분만 본다. 시·군·구 표기는 지역마다 달라(수원장안구, 부천원미구)
@@ -49,11 +54,36 @@ def find_csv(configured: str | None = None) -> Path:
     )
     if not matches:
         raise MissingDataError(
-            "한국부동산원 공동주택 단지 식별정보 CSV가 없습니다.\n"
-            "  https://www.data.go.kr/data/15106861/fileData.do 에서 내려받아\n"
+            "한국부동산원 공동주택 단지 식별정보를 찾을 수 없습니다.\n"
+            "  저장소에 동봉된 수도권 사본(bundled/)도 없습니다.\n"
+            "  https://www.data.go.kr/data/15106861/fileData.do 에서 원본 CSV를 내려받아\n"
             f"  {PROJECT_ROOT} 에 두거나 config.yaml의 reb_csv에 경로를 적으세요."
         )
     return matches[-1]
+
+
+def metro_only(complexes: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """수도권(서울·경기·인천) 단지만 남긴다."""
+    return [dict(c) for c in complexes
+            if (c.get("sgg_code") or "")[:2] in METRO_PREFIXES]
+
+
+def bundle_path() -> Path:
+    """저장소에 동봉된 수도권 사본 경로."""
+    return PROJECT_ROOT / "bundled" / BUNDLE_NAME
+
+
+def load_bundle() -> list[dict[str, Any]]:
+    """동봉된 사본을 읽는다."""
+    path = bundle_path()
+    try:
+        return json.loads(gzip.decompress(path.read_bytes()).decode("utf-8"))
+    except (OSError, gzip.BadGzipFile, json.JSONDecodeError, EOFError) as e:
+        raise MissingDataError(
+            f"동봉된 단지 데이터를 읽지 못했습니다: {path}\n"
+            f"  {e}\n"
+            "  tools/build_reb_bundle.py로 다시 만들거나, 원본 CSV를 내려받으세요."
+        ) from e
 
 
 def _read_text(path: Path) -> str:
@@ -114,7 +144,16 @@ def load(configured_path: str | None = None, force: bool = False) -> list[dict[s
         log.info("단지 식별정보: 캐시 사용 (%d건)", len(complexes))
         return complexes
 
-    path = find_csv(configured_path)
+    try:
+        path = find_csv(configured_path)
+    except MissingDataError:
+        if not bundle_path().exists():
+            raise
+        complexes = load_bundle()
+        log.info("단지 식별정보: 동봉본 사용 (%d건, 수도권)", len(complexes))
+        cache.write_text(json.dumps(complexes, ensure_ascii=False), encoding="utf-8")
+        return complexes
+
     log.info("단지 식별정보 CSV 읽는 중: %s", path.name)
     complexes = parse_rows(csv.DictReader(io.StringIO(_read_text(path))))
     if not complexes:
