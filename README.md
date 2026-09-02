@@ -32,6 +32,16 @@
 실행할 때마다 갱신되며, 커밋해야 사이트에 반영됩니다. 공개하고 싶지 않으면
 `config.yaml`의 `publish_to`를 `""`로 비우고 `docs/`를 지우세요.
 
+## 개발할 때
+
+`CLAUDE.md`에 설계 의도·실제로 겪은 버그·지켜야 할 불변식이 정리돼 있습니다.
+코드를 고치기 전에 먼저 읽으세요.
+
+```bash
+python3 -m pytest -q                  # 332개
+node tools/verify_dashboard.mjs       # 대시보드 열 정합성 (JS를 실제 실행해 검사)
+```
+
 ## 구성
 
 ```
@@ -58,7 +68,9 @@ aptfinder/             실제 로직
   sources/             rtms(실거래) · stations(지하철역) · subway_lines(노선 순서)
                        · schools(학교) · reb(단지 식별정보 CSV) · aptinfo(서울 공동주택)
                        · aptlist(전국 단지목록) · aptbasis(전국 단지 기본정보)
-tests/                 pytest (330개, 커버리지 92%)
+tools/verify_dashboard.mjs  대시보드 열 정합성 검사 (브라우저 없이 JS 실행)
+CLAUDE.md              설계 의도·버그 이력·불변식 (개발자용)
+tests/                 pytest (332개, 커버리지 92%)
 ```
 
 ## 1. 준비 — API 키 발급 (모두 무료)
@@ -179,7 +191,7 @@ open dashboard.html
 
 ```bash
 pip3 install pytest pytest-cov
-python3 -m pytest -q                              # 330 passed
+python3 -m pytest -q                              # 332 passed
 python3 -m pytest --cov=aptfinder -q              # 커버리지 92%
 ```
 
