@@ -132,15 +132,26 @@ def attach_commute(
     destinations: Sequence[str],
     driving: Any = None,
     destination_coords: Mapping[str, tuple[float, float]] | None = None,
+    criteria: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """서울 거점까지 지하철·자차 소요시간을 붙이고, 빠른 쪽을 대표값으로 삼는다.
 
-    실제로 사람은 더 빠른 수단을 고르므로 min을 쓴다. 다만 어느 쪽이 빨랐는지
-    (commute_mode)와 각각의 값도 남겨서 판단 근거가 보이게 한다.
+    지하철 시간에는 역까지 도보 시간을 더한다. 자차는 집 앞에서 재는데 지하철만
+    역에서 시작하면 역세권이 과대평가되기 때문이다. 걸어갈 수 없을 만큼 역이
+    멀면 지하철은 선택지에서 뺀다.
     """
+    criteria = criteria or {}
+    walk_limit = criteria.get("station_walk_max_m") or DEFAULT_STATION_WALK_MAX_M
     station = candidate.get("station")
-    transit = (graph.best_access(station, destinations) if station
-               else {"minutes": None, "destination": ""})
+    distance = candidate.get("station_dist_m")
+    walk = walk_minutes(distance, criteria.get("walk_speed_kmh") or DEFAULT_WALK_SPEED_KMH)
+
+    transit: dict[str, Any] = {"minutes": None, "destination": ""}
+    if station and distance is not None and distance <= walk_limit:
+        ride = graph.best_access(station, destinations)
+        if ride["minutes"] is not None:
+            transit = {"minutes": round(ride["minutes"] + (walk or 0), 1),
+                       "destination": ride["destination"]}
 
     drive: dict[str, Any] = {"minutes": None, "destination": "", "km": None, "toll": None}
     lat, lon = candidate.get("lat"), candidate.get("lon")
@@ -155,6 +166,7 @@ def attach_commute(
 
     return {
         **candidate,
+        "walk_min": walk,
         "transit_min": transit["minutes"],
         "transit_to": transit["destination"],
         "drive_min": drive["minutes"],
@@ -177,17 +189,31 @@ def passes_commute(candidate: Mapping[str, Any], criteria: Mapping[str, Any]) ->
 
 
 def passes_distance(candidate: Mapping[str, Any], criteria: Mapping[str, Any]) -> bool:
-    """역세권(필수)·학교(선택) 거리 조건 통과 여부."""
-    station_distance = candidate.get("station_dist_m")
-    if station_distance is None or station_distance > criteria["station_max_distance_m"]:
-        return False
+    """역세권(선택)·학교(선택) 거리 조건 통과 여부.
+
+    require_station이 꺼져 있으면 역까지 거리로 거르지 않는다. 자차로 다닐 수 있는
+    택지지구까지 배제하지 않기 위해서이며, 실제 통과 여부는 통근시간이 정한다.
+    """
+    if criteria.get("require_station"):
+        station_distance = candidate.get("station_dist_m")
+        if station_distance is None or station_distance > criteria["station_max_distance_m"]:
+            return False
     if not criteria.get("school_filter"):
         return True
     school_distance = candidate.get("school_dist_m")
     return school_distance is not None and school_distance <= criteria["school_max_distance_m"]
 
 
+DEFAULT_WALK_SPEED_KMH = 4.0
+DEFAULT_STATION_WALK_MAX_M = 1500
 DEFAULT_COMMUTE_REFERENCE_MIN = 60
+
+
+def walk_minutes(distance_m: float | None, speed_kmh: float = DEFAULT_WALK_SPEED_KMH) -> float | None:
+    """역까지 도보 시간(분). 거리를 모르면 None."""
+    if distance_m is None:
+        return None
+    return round(distance_m / 1000 / speed_kmh * 60, 1)
 DEFAULT_HOUSEHOLDS_FOR_FULL = 1500
 DEFAULT_SCHOOLS_FOR_FULL = 3
 DEFAULT_ACADEMY_SATURATION = 80

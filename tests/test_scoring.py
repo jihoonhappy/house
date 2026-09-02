@@ -147,12 +147,14 @@ class TestCommute:
     GRAPH = FakeGraph({("정자", "강남"): 27.0, ("수원", "시청"): 80.0})
 
     def test_attaches_minutes_and_destination(self):
-        result = analyze.attach_commute({"station": "정자"}, self.GRAPH, ["강남", "시청"])
+        result = analyze.attach_commute({"station": "정자", "station_dist_m": 0},
+                                        self.GRAPH, ["강남", "시청"])
         assert result["commute_min"] == 27.0
         assert result["commute_to"] == "강남"
 
     def test_unreachable_station_gets_none(self):
-        result = analyze.attach_commute({"station": "외딴역"}, self.GRAPH, ["강남"])
+        result = analyze.attach_commute({"station": "외딴역", "station_dist_m": 0},
+                                        self.GRAPH, ["강남"])
         assert result["commute_min"] is None
 
     def test_candidate_without_station_is_safe(self):
@@ -223,8 +225,9 @@ class TestCombinedCommute:
 
     def test_takes_the_faster_of_transit_and_driving(self):
         drive = FakeDriving({"minutes": 40.0, "destination": "시청", "km": 25.0, "toll": 0})
-        result = analyze.attach_commute({"station": "일산", "lat": 37.68, "lon": 126.77},
-                                        self.GRAPH, ["시청"], drive, DEST_COORDS)
+        result = analyze.attach_commute(
+            {"station": "일산", "station_dist_m": 0, "lat": 37.68, "lon": 126.77},
+            self.GRAPH, ["시청"], drive, DEST_COORDS)
         assert result["commute_min"] == 40.0
         assert result["commute_mode"] == "자차"
         assert result["transit_min"] == 53.0
@@ -232,35 +235,85 @@ class TestCombinedCommute:
 
     def test_keeps_transit_when_it_is_faster(self):
         drive = FakeDriving({"minutes": 60.0, "destination": "강남", "km": 30.0, "toll": 0})
-        result = analyze.attach_commute({"station": "정자", "lat": 37.36, "lon": 127.10},
-                                        self.GRAPH, ["강남"], drive, DEST_COORDS)
+        result = analyze.attach_commute(
+            {"station": "정자", "station_dist_m": 0, "lat": 37.36, "lon": 127.10},
+            self.GRAPH, ["강남"], drive, DEST_COORDS)
         assert result["commute_min"] == 27.0
         assert result["commute_mode"] == "지하철"
 
     def test_works_without_driving_lookup(self):
-        result = analyze.attach_commute({"station": "정자"}, self.GRAPH, ["강남"])
+        result = analyze.attach_commute({"station": "정자", "station_dist_m": 0},
+                                        self.GRAPH, ["강남"])
         assert result["commute_min"] == 27.0
         assert result["drive_min"] is None
         assert result["commute_mode"] == "지하철"
 
     def test_driving_rescues_unreachable_by_transit(self):
         drive = FakeDriving({"minutes": 44.0, "destination": "시청", "km": 28.0, "toll": 1200})
-        result = analyze.attach_commute({"station": "없는역", "lat": 37.7, "lon": 126.8},
-                                        self.GRAPH, ["시청"], drive, DEST_COORDS)
+        result = analyze.attach_commute(
+            {"station": "없는역", "station_dist_m": 0, "lat": 37.7, "lon": 126.8},
+            self.GRAPH, ["시청"], drive, DEST_COORDS)
         assert result["commute_min"] == 44.0
         assert result["commute_mode"] == "자차"
         assert result["drive_toll"] == 1200
 
     def test_neither_available_is_none(self):
         drive = FakeDriving({"minutes": None, "destination": "", "km": None, "toll": None})
-        result = analyze.attach_commute({"station": "없는역", "lat": 37.7, "lon": 126.8},
-                                        self.GRAPH, ["시청"], drive, DEST_COORDS)
+        result = analyze.attach_commute(
+            {"station": "없는역", "station_dist_m": 0, "lat": 37.7, "lon": 126.8},
+            self.GRAPH, ["시청"], drive, DEST_COORDS)
         assert result["commute_min"] is None
         assert result["commute_mode"] == ""
 
     def test_candidate_without_coordinates_skips_driving(self):
         drive = FakeDriving({"minutes": 10.0, "destination": "강남", "km": 5.0, "toll": 0})
-        result = analyze.attach_commute({"station": "정자"}, self.GRAPH, ["강남"],
-                                        drive, DEST_COORDS)
+        result = analyze.attach_commute({"station": "정자", "station_dist_m": 0},
+                                        self.GRAPH, ["강남"], drive, DEST_COORDS)
         assert drive.calls == 0
         assert result["drive_min"] is None
+
+
+class TestWalkingTime:
+    def test_converts_distance_to_minutes(self):
+        assert analyze.walk_minutes(800) == pytest.approx(12.0, abs=0.1)   # 4km/h
+
+    def test_zero_distance_is_zero(self):
+        assert analyze.walk_minutes(0) == 0.0
+
+    def test_missing_distance_is_none(self):
+        assert analyze.walk_minutes(None) is None
+
+    def test_respects_configured_speed(self):
+        assert analyze.walk_minutes(800, speed_kmh=8) == pytest.approx(6.0, abs=0.1)
+
+
+class TestTransitIncludesWalking:
+    GRAPH = FakeGraph({("수서", "강남"): 20.0})
+    CRIT = {"station_walk_max_m": 1500}
+
+    def test_adds_walk_to_ride_time(self):
+        result = analyze.attach_commute(
+            {"station": "수서", "station_dist_m": 800}, self.GRAPH, ["강남"],
+            criteria=self.CRIT)
+        assert result["transit_min"] == pytest.approx(32.0, abs=0.2)   # 12분 도보 + 20분
+        assert result["walk_min"] == pytest.approx(12.0, abs=0.1)
+
+    def test_station_beyond_walking_range_disables_transit(self):
+        result = analyze.attach_commute(
+            {"station": "수서", "station_dist_m": 2000}, self.GRAPH, ["강남"],
+            criteria=self.CRIT)
+        assert result["transit_min"] is None
+
+    def test_close_station_barely_changes_the_time(self):
+        result = analyze.attach_commute(
+            {"station": "수서", "station_dist_m": 100}, self.GRAPH, ["강남"],
+            criteria=self.CRIT)
+        assert result["transit_min"] == pytest.approx(21.5, abs=0.2)
+
+    def test_driving_still_wins_when_faster(self):
+        drive = FakeDriving({"minutes": 25.0, "destination": "강남", "km": 15.0, "toll": 0})
+        result = analyze.attach_commute(
+            {"station": "수서", "station_dist_m": 800, "lat": 37.5, "lon": 127.1},
+            self.GRAPH, ["강남"], drive, DEST_COORDS, criteria=self.CRIT)
+        assert result["commute_mode"] == "자차"
+        assert result["commute_min"] == 25.0

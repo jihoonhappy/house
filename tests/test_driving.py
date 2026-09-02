@@ -50,7 +50,9 @@ class TestLookup:
     def test_returns_minutes_distance_and_toll(self, monkeypatch, tmp_path):
         finder_, _ = finder(monkeypatch, [route(2580, 18400, 2700)], tmp_path)
         result = finder_.travel(37.505, 126.753, (37.5217, 126.9244))
-        assert result == {"minutes": 43.0, "km": 18.4, "toll": 2700}
+        assert {k: result[k] for k in ("minutes", "km", "toll")} == {
+            "minutes": 43.0, "km": 18.4, "toll": 2700}
+        assert result["departure"] == finder_.departure
 
     def test_second_call_at_same_point_uses_cache(self, monkeypatch, tmp_path):
         finder_, calls = finder(monkeypatch, [route(600, 5000)], tmp_path)
@@ -97,3 +99,34 @@ class TestBudget:
         with pytest.raises(ApiError):
             finder_.travel(37.6, 127.2, (37.4, 127.1))
         assert json.loads((tmp_path / "drive.json").read_text(encoding="utf-8"))
+
+
+class TestCacheKeyIsDateIndependent:
+    """캐시 키에 날짜가 들어가면 날이 바뀔 때마다 전량 재조회된다."""
+
+    def test_same_route_hits_cache_across_departure_dates(self, monkeypatch, tmp_path):
+        calls = []
+
+        def fake_get_json(url, headers=None, timeout=30):
+            calls.append(url)
+            return route(1800, 15000)
+
+        monkeypatch.setattr(kakao, "get_json", fake_get_json)
+        first = driving.DrivingTimes("key", tmp_path / "d.json", departure_hour=8,
+                                     sleep=lambda s: None)
+        first.departure = "202609030800"
+        first.travel(37.5, 127.0, (37.4, 127.1))
+        first.save()
+
+        later = driving.DrivingTimes("key", tmp_path / "d.json", departure_hour=8,
+                                     sleep=lambda s: None)
+        later.departure = "202612310800"          # 몇 달 뒤
+        assert later.travel(37.5, 127.0, (37.4, 127.1))["minutes"] == 30.0
+        assert len(calls) == 1                     # 재조회하지 않는다
+
+    def test_result_records_which_departure_it_came_from(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(kakao, "get_json",
+                            lambda url, headers=None, timeout=30: route(1800, 15000))
+        finder_ = driving.DrivingTimes("key", tmp_path / "d.json", departure_hour=8,
+                                       sleep=lambda s: None)
+        assert finder_.travel(37.5, 127.0, (37.4, 127.1))["departure"] == finder_.departure

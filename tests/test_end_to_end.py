@@ -6,8 +6,9 @@ from aptfinder import analyze, history
 BANDS = [{"label": "59㎡형", "min": 55, "max": 66}, {"label": "84㎡형", "min": 80, "max": 96}]
 CRITERIA = {"price_min": 60000, "price_max": 70000, "lookback_months": 12,
             "price_window_months": 6, "min_trade_count": 2, "area_min_m2": 59,
-            "area_max_m2": 0, "station_max_distance_m": 500,
-            "school_max_distance_m": 800, "school_filter": False}
+            "area_max_m2": 0, "station_max_distance_m": 500, "require_station": True,
+            "station_walk_max_m": 1500, "school_max_distance_m": 800,
+            "school_filter": False}
 WEIGHTS = {"commute": 18, "station_distance": 12, "school_zone": 12,
            "school_distance": 10, "households": 10, "trade_activity": 10,
            "build_year": 8, "hospital": 8, "mart": 7, "market": 5}
@@ -80,6 +81,17 @@ class TestPipeline:
 
     def test_drops_complex_outside_station_radius(self):
         assert run(trades_for("먼단지", 65000)) == []
+
+    def test_keeps_far_complex_when_station_is_not_required(self):
+        """자차로 다닐 수 있는 택지지구를 역 거리만으로 배제하지 않는다."""
+        relaxed = {**CRITERIA, "require_station": False}
+        candidates = analyze.build_candidates(
+            trades_for("먼단지", 65000), BANDS, relaxed, {"202607", "202608"})
+        located = [{**c, "lat": COORDS[c["apt"]][0], "lon": COORDS[c["apt"]][1]}
+                   for c in candidates]
+        with_distance = [analyze.attach_distances(c, STATIONS, SCHOOLS, SETTINGS)
+                         for c in located]
+        assert [c for c in with_distance if analyze.passes_distance(c, relaxed)]
 
     def test_drops_complex_outside_price_range(self):
         assert run(trades_for("까치마을", 95000)) == []

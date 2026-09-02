@@ -33,7 +33,7 @@ CSV_COLUMNS = [
     "price_avg_manwon", "price_peak_manwon", "price_peak_half", "price_low_manwon",
     "vs_avg_pct", "vs_peak_pct", "history_count",
     "commute_min", "commute_mode", "commute_to",
-    "transit_min", "drive_min", "drive_km", "drive_toll",
+    "walk_min", "transit_min", "drive_min", "drive_km", "drive_toll",
     "households", "dong_count", "complex_type", "parking", "trade_count",
     "latest_deal_ym", "latest_price_manwon", "build_year",
     "station", "station_line", "station_dist_m",
@@ -190,7 +190,9 @@ def run_analyze(cfg: Mapping[str, Any]) -> list[dict[str, Any]]:
     with_distance = [analyze.attach_distances(c, station_list, school_list, settings)
                      for c in located]
     near_station = [c for c in with_distance if analyze.passes_distance(c, criteria)]
-    log.info("역세권 %dm 조건 통과: %d곳", criteria["station_max_distance_m"], len(near_station))
+    log.info("역세권 조건(%s) 통과: %d곳",
+             f"{criteria['station_max_distance_m']}m 필수" if criteria.get("require_station")
+             else "필터 해제 — 통근시간으로 판정", len(near_station))
     if not near_station:
         return _save([], cfg)
 
@@ -202,11 +204,13 @@ def run_analyze(cfg: Mapping[str, Any]) -> list[dict[str, Any]]:
     for index, candidate in enumerate(near_station, 1):
         try:
             commuting.append(
-                analyze.attach_commute(candidate, graph, destinations, drives, coords))
+                analyze.attach_commute(candidate, graph, destinations, drives, coords,
+                                       criteria))
         except ApiError as e:
             log.warning("자차 조회 중단, 이후는 지하철만 사용: %s", e)
             drives = None
-            commuting.append(analyze.attach_commute(candidate, graph, destinations))
+            commuting.append(
+                analyze.attach_commute(candidate, graph, destinations, criteria=criteria))
         if drives and index % 200 == 0:
             log.info("  자차 소요시간 %d/%d", index, len(near_station))
     if drives:

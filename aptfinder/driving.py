@@ -39,7 +39,10 @@ class DrivingTimes(CachedKakaoClient):
         """(분, km, 통행료). 경로를 찾지 못하면 None."""
         origin = f"{lon:.{COORD_PRECISION}f},{lat:.{COORD_PRECISION}f}"
         target = f"{destination[1]:.{COORD_PRECISION}f},{destination[0]:.{COORD_PRECISION}f}"
-        cache_key = f"{origin}>{target}@{self.departure}"
+        # 캐시 키에 조회 날짜를 넣으면 날이 바뀔 때마다 전량 재조회된다.
+        # 평일 아침 러시아워 소요시간은 요일별 차이가 크지 않아 날짜는 빼고,
+        # 어느 시점 기준이었는지는 값 안에 남긴다.
+        cache_key = f"{origin}>{target}"
         hit, value = self.cached(cache_key)
         if hit:
             return dict(value) if value else None
@@ -49,6 +52,8 @@ class DrivingTimes(CachedKakaoClient):
             "departure_time": self.departure, "priority": "RECOMMEND",
         })
         result = self._summarize(payload)
+        if result:
+            result = {**result, "departure": self.departure}
         self.remember(cache_key, result)
         return dict(result) if result else None
 
