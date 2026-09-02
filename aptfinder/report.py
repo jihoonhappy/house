@@ -22,7 +22,8 @@ def build_title(
         parts.append(f"전용 {criteria['area_min_m2']}㎡+")
     if criteria.get("min_households"):
         parts.append(f"{criteria['min_households']}세대+")
-    parts.append(f"역세권 {criteria['station_max_distance_m']}m")
+    if criteria.get("require_station"):
+        parts.append(f"역세권 {criteria['station_max_distance_m']}m")
     if criteria.get("max_commute_min"):
         parts.append(f"서울 {criteria['max_commute_min']}분")
     if criteria.get("exclude_complex_types"):

@@ -196,3 +196,16 @@ class TestPriceHistoryColumns:
     def test_history_series_reaches_the_page(self):
         html = report.render([self.HIST], CRITERIA)
         assert '"half": "2021H2"' in html or '"half":"2021H2"' in html
+
+
+class TestStationConditionInTitle:
+    def test_shows_station_condition_only_when_required(self):
+        required = report.build_title({**CRITERIA, "require_station": True,
+                                       "station_max_distance_m": 800})
+        assert "역세권 800m" in required
+
+    def test_omits_station_condition_when_not_required(self):
+        """필터가 아닌 조건을 제목에 쓰면 표와 어긋난 설명이 된다."""
+        relaxed = report.build_title({**CRITERIA, "require_station": False,
+                                      "station_max_distance_m": 800})
+        assert "역세권" not in relaxed

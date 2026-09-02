@@ -58,7 +58,7 @@ aptfinder/             실제 로직
   sources/             rtms(실거래) · stations(지하철역) · subway_lines(노선 순서)
                        · schools(학교) · reb(단지 식별정보 CSV) · aptinfo(서울 공동주택)
                        · aptlist(전국 단지목록) · aptbasis(전국 단지 기본정보)
-tests/                 pytest (331개, 커버리지 92%)
+tests/                 pytest (330개, 커버리지 92%)
 ```
 
 ## 1. 준비 — API 키 발급 (모두 무료)
@@ -179,7 +179,7 @@ open dashboard.html
 
 ```bash
 pip3 install pytest pytest-cov
-python3 -m pytest -q                              # 331 passed
+python3 -m pytest -q                              # 330 passed
 python3 -m pytest --cov=aptfinder -q              # 커버리지 92%
 ```
 
