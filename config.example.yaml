@@ -34,7 +34,7 @@ api_limits:
 criteria:
   # 가격 범위 (만원 단위). "면적대별 대표가격" 기준으로 적용된다.
   price_min: 30000
-  price_max: 70000
+  price_max: 83000
 
   # 실거래가 수집 기간 (최근 N개월)
   lookback_months: 12
@@ -52,7 +52,7 @@ criteria:
 
   # 서울 도심까지 지하철 추정 소요시간 상한 (분). 0 = 제한 없음
   # 서울 단지도 같은 기준으로 평가된다.
-  max_commute_min: 45
+  max_commute_min: 50
 
   # 역세권 점수 기준 거리 (미터). 이 거리에서 0점, 0m에서 만점.
   # 필터가 아니라 점수에만 쓴다 (require_station 참고).
@@ -63,7 +63,7 @@ criteria:
   require_station: false
 
   # 이보다 역이 멀면 지하철은 선택지에서 뺀다 (걸어갈 수 없는 거리).
-  station_walk_max_m: 1500
+  station_walk_max_m: 2500
 
   # 도보 속도 (km/h). 역까지 도보 시간을 지하철 소요시간에 더한다.
   walk_speed_kmh: 4.0
